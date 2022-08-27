@@ -57,7 +57,7 @@ function Get-DotSourceFileFromGitHub {
 
 $splat = @{
     gitHubRepository = 'david-wiggs/codeql-anywhere'
-    path = 'functions.ps1'
+    path = 'resources/functions.ps1'
     branch = 'main'
 }
 Get-DotSourceFileFromGitHub @splat
@@ -74,13 +74,32 @@ foreach ($file in $qlFiles) {
             $precision = 'N/A'
         }
 
+        if ($file.FullName -like "*cwe*") {
+            $cwe = ($file.FullName | Select-String -Pattern 'cwe-\d{3,4}').Matches.Value.ToUpper()
+        } else {
+            $cwe = 'N/A'
+        }
+
+        [int]$securitySeverity = ($data | Where-Object {$_ -like "security-severity*"}).Split()[-1] 
+        if ($securitySeverity -ge 9) {
+            $severity = 'critical'
+        } elseif ($securitySeverity -ge 7 -and $securitySeverity -lt 9 ) {
+            $severity = 'high'
+        } elseif ($securitySeverity -ge 4 -and $securitySeverity -lt 7 ) {
+            $severity = 'medium'
+        } elseif ($securitySeverity -gt 0 -and $securitySeverity -lt 4 ) {
+            $severity = 'low'
+        } 
+
         $dataObj = [PSCustomObject]@{
             name = ($data | Where-Object {$_ -like "name*"}).Split() | Where-Object {$_ -notlike 'name'} | Join-String -Separator ' '
-            'security-severity' = ($data | Where-Object {$_ -like "security-severity*"}).Split()[-1] 
+            'security-severity' = $securitySeverity
+            severity = $severity
             precision = $precision
             id = ($data | Where-Object {$_ -like "id*"}).Split()[-1]
             language = ($data | Where-Object {$_ -like "id*"}).Split()[-1].Split('/')[0]
             location = ($file.FullName | Select-String -Pattern 'codeql.*').Matches.Value
+            cwe = $cwe
         }
         [array]$report += $dataObj
     }
