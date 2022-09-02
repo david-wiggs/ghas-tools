@@ -66,42 +66,59 @@ $codeQLDirectory = Get-LatestCodeQLBundle
 $qlFiles = Get-ChildItem -Recurse -Path $codeQLDirectory -Include "*.ql" 
 foreach ($file in $qlFiles) {
     $content = Get-Content -Path $file.FullName
-    if ($null -ne ($content | Select-String -Pattern '\* @security-severity')) {
-        $data = ($content | Select-String -Pattern '\* @') | ForEach-Object {$_.ToString()} | ForEach-Object {$_.Replace('* @', '') | ForEach-Object {$_.Trim()}}
-        if ($null -ne ($data | Where-Object {$_ -like 'precision*'})) {
-            $precision = ($data | Where-Object {$_ -like "precision*"}).Split()[-1]
-        } else {
-            $precision = 'N/A'
-        }
+    if ($content -match '.*/\*\*' -and $content -match '.*\*/' -and $content -match '.*\@tags') {
+        [array]$metaData = $content[$content.IndexOf('/**')..$content.IndexOf($($content | Select-String -Pattern ".*\*/").Matches.Value)].Replace('*', $null).Trim() | Where-Object {$_ -ne '/'}
+        $tagsLine = $metaData.IndexOf($($metaData | Where-Object {$_ -like "@tags*"}))
+        $nextLine = $tagsLine
+        do {
+            $nextLine++
+        } until ($metaData[$nextLine] -like "@*" -or $nextLine -eq $metaData.Length)
+        [array]$tags = $metaData[$tagsLine..($nextLine-1)]
+        $tags[0] = $tags[0].Replace('@tags ','')
 
-        if ($file.FullName -like "*cwe*") {
-            $cwe = ($file.FullName | Select-String -Pattern 'cwe-\d{3,4}').Matches.Value.ToUpper()
-        } else {
-            $cwe = 'N/A'
-        }
+        if ($null -ne ($metaData | Where-Object {$_ -like "*security-severity*"})) {
+            $data = ($content | Select-String -Pattern '\* @') | ForEach-Object {$_.ToString()} | ForEach-Object {$_.Replace('* @', '') | ForEach-Object {$_.Trim()}}
+            if ($null -ne ($data | Where-Object {$_ -like 'precision*'})) {
+                $precision = ($data | Where-Object {$_ -like "precision*"}).Split()[-1]
+            } else {
+                $precision = 'N/A'
+            }
 
-        [int]$securitySeverity = ($data | Where-Object {$_ -like "security-severity*"}).Split()[-1] 
-        if ($securitySeverity -ge 9) {
-            $severity = 'critical'
-        } elseif ($securitySeverity -ge 7 -and $securitySeverity -lt 9 ) {
-            $severity = 'high'
-        } elseif ($securitySeverity -ge 4 -and $securitySeverity -lt 7 ) {
-            $severity = 'medium'
-        } elseif ($securitySeverity -gt 0 -and $securitySeverity -lt 4 ) {
-            $severity = 'low'
-        } 
+            if ($null -ne ($tags | Where-Object {$_ -like "*cwe*"})) {
+                $cwes = ($tags | Where-Object {$_ -like "*cwe*"} | ForEach-Object {$_.Split('/')[-1]}).ToUpper()
+            } else {
+                $cwes = $null
+            }
 
-        $dataObj = [PSCustomObject]@{
-            name = ($data | Where-Object {$_ -like "name*"}).Split() | Where-Object {$_ -notlike 'name'} | Join-String -Separator ' '
-            'security-severity' = $securitySeverity
-            severity = $severity
-            precision = $precision
-            id = ($data | Where-Object {$_ -like "id*"}).Split()[-1]
-            language = ($data | Where-Object {$_ -like "id*"}).Split()[-1].Split('/')[0]
-            location = ($file.FullName | Select-String -Pattern 'codeql.*').Matches.Value
-            cwe = $cwe
+            if ($null -ne ($data | Where-Object {$_ -like "security-severity*"})) {
+                <# Action to perform if the condition is true #>
+            }
+            [int]$securitySeverity = ($data | Where-Object {$_ -like "security-severity*"}).Split()[-1] 
+            if ($securitySeverity -ge 9) {
+                $severity = 'critical'
+            } elseif ($securitySeverity -ge 7 -and $securitySeverity -lt 9 ) {
+                $severity = 'high'
+            } elseif ($securitySeverity -ge 4 -and $securitySeverity -lt 7 ) {
+                $severity = 'medium'
+            } elseif ($securitySeverity -gt 0 -and $securitySeverity -lt 4 ) {
+                $severity = 'low'
+            } 
+
+            foreach ($cwe in $cwes) {
+                $dataObj = [PSCustomObject]@{
+                    name = ($data | Where-Object {$_ -like "name*"}).Split() | Where-Object {$_ -notlike 'name'} | Join-String -Separator ' '
+                    'security-severity' = $securitySeverity
+                    severity = $severity
+                    precision = $precision
+                    id = ($data | Where-Object {$_ -like "id*"}).Split()[-1]
+                    language = ($data | Where-Object {$_ -like "id*"}).Split()[-1].Split('/')[0]
+                    location = ($file.FullName | Select-String -Pattern 'codeql.*').Matches.Value
+                    cwe = $cwe
+                }
+                [array]$report += $dataObj
+            }
         }
-        [array]$report += $dataObj
     }
+    
 }
 $report | Export-Csv -Path CodeQLSecuritySeverityRules.csv -Force
