@@ -1,7 +1,9 @@
 [CmdletBinding()]
 Param
 (
-    [Parameter(Mandatory = $False)] [string] $licenseCount
+    [Parameter(Mandatory = $True)] [string] $licenseCount,
+    [Parameter(Mandatory = $True)] [string] $gitHubToken,
+    [Parameter(Mandatory = $True)] [string] $gitHubOrganization
 )
 
 function Get-GitHubOrganizationRepositories {
